@@ -67,7 +67,7 @@ def filter_coco(coco, cls_split):
 
 # root_path = sys.argv[1]
 # print(root_path)
-root_path = '/kaggle/input/coco2017'
+root_path = '/kaggle/input/coco-2017-dataset/coco2017'
 dataDir = join(root_path, 'annotations')
 support_dict = {}
 
