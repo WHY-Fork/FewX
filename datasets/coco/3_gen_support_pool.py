@@ -185,7 +185,7 @@ def crop_support(img, bbox):
 
 def main():
 #     dataDir = '.'
-    root_path = '/kaggle/input/coco2017'
+    root_path = '/kaggle/input/coco-2017-dataset/coco2017'
 #     root_path = sys.argv[1]
     support_path = os.path.join(root_path, 'support')
     if not isdir(support_path): 
