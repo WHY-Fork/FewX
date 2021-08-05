@@ -132,10 +132,10 @@ for dataType in ['instances_train2017.json']: #, 'split_voc_instances_train2017.
         'images': save_images,
         'annotations': annotations_split2,
         'categories': save_categories}
-    new_annotations_path = os.path.join(root_path, 'new_annotations')
+    new_annotations_path = os.path.join('/kaggle/working/FewX/datasets/coco', 'new_annotations')
     if not os.path.exists(new_annotations_path):
         os.makedirs(new_annotations_path)
-    split2_file = os.path.join(root_path, 'new_annotations/final_split_non_voc_instances_train2017.json')
+    split2_file = os.path.join('/kaggle/working/FewX/datasets/coco', 'new_annotations/final_split_non_voc_instances_train2017.json')
 
     with open(split2_file, 'w') as f:
         json.dump(dataset_split2, f) 
