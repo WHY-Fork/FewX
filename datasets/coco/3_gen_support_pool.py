@@ -187,7 +187,7 @@ def main():
 #     dataDir = '.'
     root_path = '/kaggle/input/coco-2017-dataset/coco2017'
 #     root_path = sys.argv[1]
-    support_path = os.path.join(root_path, 'support')
+    support_path = os.path.join('/kaggle/working/FewX/datasets/coco', 'support')
     if not isdir(support_path): 
         mkdir(support_path)
     #else:
@@ -205,7 +205,7 @@ def main():
         set_crop_base_path = join(support_path, dataType)
         set_img_base_path = join(root_path, dataType)
 
-        annFile = os.path.join(root_path, 'new_annotations/final_split_non_voc_instances_train2017.json')
+        annFile = os.path.join(support_path, 'new_annotations/final_split_non_voc_instances_train2017.json')
         with open(annFile,'r') as load_f:
             dataset = json.load(load_f)
             print(dataset.keys())
