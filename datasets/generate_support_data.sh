@@ -1,4 +1,4 @@
-DATA_ROOT=/kaggle/working/coco
+DATA_ROOT=/kaggle/working/FewX/datasets/coco
 
 cd coco
 
