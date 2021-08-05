@@ -188,7 +188,7 @@ def main():
 
     root_path = '/kaggle/input/coco-2017-dataset/coco2017'
 #     root_path = sys.argv[1]
-    support_path = os.path.join('kaggle/working/FewX/datasets/coco', '10_shot_support')
+    support_path = os.path.join('/kaggle/working/FewX/datasets/coco', '10_shot_support')
     #support_path = '10_shot_support'
     if not isdir(support_path): 
         mkdir(support_path)
@@ -211,7 +211,7 @@ def main():
         #annFile = '{}/annotations/instances_{}.json'.format(dataDir,dataType)
         #annFile = './new_annotations/final_split_voc_10_shot_instances_train2017.json'
         
-        annFile = os.path.join(support_path, 'new_annotations/final_split_voc_10_shot_instances_train2017.json')
+        annFile = os.path.join(/kaggle/working/FewX/datasets/coco, 'new_annotations/final_split_voc_10_shot_instances_train2017.json')
         
         with open(annFile,'r') as load_f:
             dataset = json.load(load_f)
