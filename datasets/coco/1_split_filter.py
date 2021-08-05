@@ -65,9 +65,9 @@ def filter_coco(coco, cls_split):
     return new_anns
 
 
-root_path = sys.argv[1]
-print(root_path)
-#root_path = '/home/fanqi/data/COCO'
+# root_path = sys.argv[1]
+# print(root_path)
+root_path = '/kaggle/input/coco2017'
 dataDir = './annotations'
 support_dict = {}
 
