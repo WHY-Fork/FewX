@@ -184,10 +184,10 @@ def crop_support(img, bbox):
         
 
 def main():
-    dataDir = '.'
+#     dataDir = '.'
 
-    #root_path = '/home/fanqi/data/COCO'
-    root_path = sys.argv[1]
+    root_path = '/kaggle/input/coco2017'
+#     root_path = sys.argv[1]
     support_path = os.path.join(root_path, '10_shot_support')
     #support_path = '10_shot_support'
     if not isdir(support_path): 
@@ -205,7 +205,7 @@ def main():
 
     for dataType in ['train2017']: #, 'train2017']:
         set_crop_base_path = join(support_path, dataType)
-        set_img_base_path = join(dataDir, dataType)
+        set_img_base_path = join(root_path, dataType)
 
         # other information
         #annFile = '{}/annotations/instances_{}.json'.format(dataDir,dataType)
