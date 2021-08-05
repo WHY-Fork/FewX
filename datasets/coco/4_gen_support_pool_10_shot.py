@@ -211,7 +211,7 @@ def main():
         #annFile = '{}/annotations/instances_{}.json'.format(dataDir,dataType)
         #annFile = './new_annotations/final_split_voc_10_shot_instances_train2017.json'
         
-        annFile = os.path.join(/kaggle/working/FewX/datasets/coco, 'new_annotations/final_split_voc_10_shot_instances_train2017.json')
+        annFile = os.path.join('/kaggle/working/FewX/datasets/coco', 'new_annotations/final_split_voc_10_shot_instances_train2017.json')
         
         with open(annFile,'r') as load_f:
             dataset = json.load(load_f)
