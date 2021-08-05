@@ -1,4 +1,4 @@
-DATA_ROOT=/home/fanqi/data/COCO
+DATA_ROOT=/kaggle/working/coco
 
 cd coco
 
