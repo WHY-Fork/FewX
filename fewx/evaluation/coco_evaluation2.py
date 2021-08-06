@@ -7,24 +7,21 @@ import json
 import logging
 import os
 import pickle
-import time
 from collections import OrderedDict
-from collections import defaultdict
 
 import detectron2.utils.comm as comm
 import numpy as np
 import pycocotools.mask as mask_util
 import torch
-from detectron2 import _C
 from detectron2.data import MetadataCatalog
 from detectron2.data.datasets.coco import convert_to_coco_json
 from detectron2.evaluation.evaluator import DatasetEvaluator
 from detectron2.structures import Boxes, BoxMode, pairwise_iou
 from detectron2.utils.logger import create_small_table
+from detectron2.evaluation.fast_eval_api import COCOeval_opt as COCOeval
 from fvcore.common.file_io import PathManager
-from pycocotools.coco import COCO
 from pycocotools import mask as maskUtils
-from pycocotools.cocoeval import COCOeval
+from pycocotools.coco import COCO
 from tabulate import tabulate
 
 logger = logging.getLogger(__name__)
@@ -34,6 +31,7 @@ CLASS_NAMES = [
     "chair", "cow", "dining table", "dog", "horse", "motorcycle", "person",
     "potted plant", "sheep", "couch", "train", "tv",
 ]
+
 
 class COCOEvaluator2(DatasetEvaluator):
     """
