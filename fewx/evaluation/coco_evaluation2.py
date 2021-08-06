@@ -19,11 +19,12 @@ from detectron2 import _C
 from detectron2.data import MetadataCatalog
 from detectron2.data.datasets.coco import convert_to_coco_json
 from detectron2.evaluation.evaluator import DatasetEvaluator
-from detectron2.evaluation.fast_eval_api import COCOeval_opt as COCOeval
 from detectron2.structures import Boxes, BoxMode, pairwise_iou
 from detectron2.utils.logger import create_small_table
 from fvcore.common.file_io import PathManager
 from pycocotools.coco import COCO
+from pycocotools import mask as maskUtils
+from pycocotools.cocoeval import COCOeval
 from tabulate import tabulate
 
 logger = logging.getLogger(__name__)
@@ -577,152 +578,124 @@ class WhyCocoEval(COCOeval):
     Overwrite COCO eval
     """
 
-    def _prepare(self):
-        '''
-        Prepare ._gts and ._dts for evaluation based on params
-        :return: None
-        '''
-        def _toMask(anns, coco):
-            # modify ann['segmentation'] by reference
-            for ann in anns:
-                rle = coco.annToRLE(ann)
-                ann['segmentation'] = rle
+    def computeIoU(self, imgId, catId):
         p = self.params
+
+        # get gt and dt for all category
         if p.useCats:
-            gts=self.cocoGt.loadAnns(self.cocoGt.getAnnIds(imgIds=p.imgIds, catIds=p.catIds))
-            dts=self.cocoDt.loadAnns(self.cocoDt.getAnnIds(imgIds=p.imgIds, catIds=p.catIds))
+            # gt = self._gts[imgId, catId]
+            # dt = self._dts[imgId, catId]
+            gt = [_ for cId in p.catIds for _ in self._gts[imgId, cId]]
+            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
         else:
-            gts=self.cocoGt.loadAnns(self.cocoGt.getAnnIds(imgIds=p.imgIds))
-            dts=self.cocoDt.loadAnns(self.cocoDt.getAnnIds(imgIds=p.imgIds))
+            gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
+            dt = [_ for cId in p.catIds for _ in self._dts[imgId,cId]]
+        if len(gt) == 0 and len(dt) ==0:
+            return []
+        inds = np.argsort([-d['score'] for d in dt], kind='mergesort')
+        dt = [dt[i] for i in inds]
+        if len(dt) > p.maxDets[-1]:
+            dt=dt[0:p.maxDets[-1]]
 
-        # convert ground truth to mask if iouType == 'segm'
         if p.iouType == 'segm':
-            _toMask(gts, self.cocoGt)
-            _toMask(dts, self.cocoDt)
-        # set ignore flag
-        for gt in gts:
-            gt['ignore'] = gt['ignore'] if 'ignore' in gt else 0
-            gt['ignore'] = 'iscrowd' in gt and gt['iscrowd']
-            if p.iouType == 'keypoints':
-                gt['ignore'] = (gt['num_keypoints'] == 0) or gt['ignore']
-        self._gts = defaultdict(list)       # gt for evaluation
-        self._dts = defaultdict(list)       # dt for evaluation
-        for gt in gts:
-            self._gts[gt['image_id'], gt['category_id']].append(gt)
+            g = [g['segmentation'] for g in gt]
+            d = [d['segmentation'] for d in dt]
+        elif p.iouType == 'bbox':
+            g = [g['bbox'] for g in gt]
+            d = [d['bbox'] for d in dt]
+        else:
+            raise Exception('unknown iouType for iou computation')
 
-        # To eliminate the effects of categories, assign all categories to each DT
-        for dt in dts:
-            for catId in p.catIds:
-                dt['category_id'] = catId
-                self._dts[dt['image_id'], dt['category_id']].append(dt)
+        # compute iou between each dt and gt region
+        iscrowd = [int(o['iscrowd']) for o in gt]
+        ious = maskUtils.iou(d,g,iscrowd)
+        return ious
 
-        self.evalImgs = defaultdict(list)   # per-image per-category evaluation results
-        self.eval     = {}                  # accumulated evaluation results
-
-    def evaluate(self):
+    def evaluateImg(self, imgId, catId, aRng, maxDet):
         """
-        Run per image evaluation on given images and store results in self.evalImgs_cpp, a
-        datastructure that isn't readable from Python but is used by a c++ implementation of
-        accumulate().  Unlike the original COCO PythonAPI, we don't populate the datastructure
-        self.evalImgs because this datastructure is a computational bottleneck.
-        :return: None
+        perform evaluation for single category and image
+        :return: dict (single image results)
         """
-        tic = time.time()
-
         p = self.params
-        # add backward compatibility if useSegm is specified in params
-        if p.useSegm is not None:
-            p.iouType = "segm" if p.useSegm == 1 else "bbox"
-        logger.info("Evaluate annotation type *{}*".format(p.iouType))  # type = bbox
-        p.imgIds = list(np.unique(p.imgIds))
+
+        # get gt and dt for all category
         if p.useCats:
-            p.catIds = list(np.unique(p.catIds))
-        p.maxDets = sorted(p.maxDets)
-        self.params = p
+            # gt = self._gts[imgId, catId]
+            # dt = self._dts[imgId, catId]
+            gt = [_ for cId in p.catIds for _ in self._gts[imgId, cId]]
+            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
+        else:
+            gt = [_ for cId in p.catIds for _ in self._gts[imgId, cId]]
+            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
+        if len(gt) == 0 and len(dt) == 0:
+            return None
 
-        self._prepare()  # bottleneck
+        # remove bad ground truth
+        for g in gt:
+            if g['ignore'] or (g['area'] < aRng[0] or g['area'] > aRng[1]):
+                g['_ignore'] = 1
+            else:
+                g['_ignore'] = 0
 
-        # loop through images, area range, max detection number
-        catIds = p.catIds if p.useCats else [-1]
+        # sort gt ignore last
+        gtind = np.argsort([g['_ignore'] for g in gt], kind='mergesort')
+        gt = [gt[i] for i in gtind]
+        # sort dt highest score first,
+        dtind = np.argsort([-d['score'] for d in dt], kind='mergesort')
+        dt = [dt[i] for i in dtind[0:maxDet]]
+        iscrowd = [int(o['iscrowd']) for o in gt]
+        # load computed ious
+        ious = self.ious[imgId, catId][:, gtind] if len(self.ious[imgId, catId]) > 0 else self.ious[imgId, catId]
 
-        # compute IoU
-        if p.iouType == "segm" or p.iouType == "bbox":
-            computeIoU = self.computeIoU
-        elif p.iouType == "keypoints":
-            computeIoU = self.computeOks
-        self.ious = {
-            (imgId, catId): computeIoU(imgId, catId) for imgId in p.imgIds for catId in catIds
-        }  # bottleneck
-
-        maxDet = p.maxDets[-1]
-
-        # <<<< Beginning of code differences with original COCO API
-        def convert_instances_to_cpp(instances, is_det=False):
-            # Convert annotations for a list of instances in an image to a format that's fast
-            # to access in C++
-            instances_cpp = []
-            for instance in instances:
-                instance_cpp = _C.InstanceAnnotation(
-                    int(instance["id"]),
-                    instance["score"] if is_det else instance.get("score", 0.0),
-                    instance["area"],
-                    bool(instance.get("iscrowd", 0)),
-                    bool(instance.get("ignore", 0)),
-                )
-                instances_cpp.append(instance_cpp)
-            return instances_cpp
-
-        # Convert GT annotations, detections, and IOUs to a format that's fast to access in C++
-        ground_truth_instances = [
-            [convert_instances_to_cpp(self._gts[imgId, catId]) for catId in p.catIds]
-            for imgId in p.imgIds
-        ]
-        detected_instances = [
-            [convert_instances_to_cpp(self._dts[imgId, catId], is_det=True) for catId in p.catIds]
-            for imgId in p.imgIds
-        ]
-        ious = [[self.ious[imgId, catId] for catId in catIds] for imgId in p.imgIds]
-
-        if not p.useCats:
-            # For each image, flatten per-category lists into a single list
-            ground_truth_instances = [[[o for c in i for o in c]] for i in ground_truth_instances]
-            detected_instances = [[[o for c in i for o in c]] for i in detected_instances]
-
-        # Call C++ implementation of self.evaluateImgs()
-        self._evalImgs_cpp = _C.COCOevalEvaluateImages(
-            p.areaRng, maxDet, p.iouThrs, ious, ground_truth_instances, detected_instances
-        )
-        self._evalImgs = None
-
-        self._paramsEval = copy.deepcopy(self.params)
-        toc = time.time()
-        logger.info("COCOeval_opt.evaluate() finished in {:0.2f} seconds.".format(toc - tic))
-        # >>>> End of code differences with original COCO API
-
-    def accumulate(self):
-        """
-        Accumulate per image evaluation results and store the result in self.eval.  Does not
-        support changing parameter settings from those used by self.evaluate()
-        """
-        logger.info("Accumulating evaluation results...")
-        tic = time.time()
-        assert hasattr(
-            self, "_evalImgs_cpp"
-        ), "evaluate() must be called before accmulate() is called."
-
-        self.eval = _C.COCOevalAccumulate(self._paramsEval, self._evalImgs_cpp)
-
-        # recall is num_iou_thresholds X num_categories X num_area_ranges X num_max_detections
-        self.eval["recall"] = np.array(self.eval["recall"]).reshape(
-            self.eval["counts"][:1] + self.eval["counts"][2:]
-        )
-
-        # precision and scores are num_iou_thresholds X num_recall_thresholds X num_categories X
-        # num_area_ranges X num_max_detections
-        self.eval["precision"] = np.array(self.eval["precision"]).reshape(self.eval["counts"])
-        self.eval["scores"] = np.array(self.eval["scores"]).reshape(self.eval["counts"])
-        toc = time.time()
-        logger.info("COCOeval_opt.accumulate() finished in {:0.2f} seconds.".format(toc - tic))
+        T = len(p.iouThrs)
+        G = len(gt)
+        D = len(dt)
+        gtm = np.zeros((T, G))
+        dtm = np.zeros((T, D))
+        gtIg = np.array([g['_ignore'] for g in gt])
+        dtIg = np.zeros((T, D))
+        if not len(ious) == 0:
+            for tind, t in enumerate(p.iouThrs):
+                for dind, d in enumerate(dt):  # d index and d
+                    # information about best match so far (m=-1 -> unmatched)
+                    iou = min([t, 1 - 1e-10])
+                    m = -1
+                    for gind, g in enumerate(gt):
+                        # if this gt already matched, and not a crowd, continue
+                        if gtm[tind, gind] > 0 and not iscrowd[gind]:
+                            continue
+                        # if dt matched to reg gt, and on ignore gt, stop
+                        if m > -1 and gtIg[m] == 0 and gtIg[gind] == 1:
+                            break
+                        # continue to next gt unless better match made
+                        if ious[dind, gind] < iou:
+                            continue
+                        # if match successful and best so far, store appropriately
+                        iou = ious[dind, gind]
+                        m = gind
+                    # if match made store id of match for both dt and gt
+                    if m == -1:
+                        continue
+                    dtIg[tind, dind] = gtIg[m]
+                    dtm[tind, dind] = gt[m]['id']
+                    gtm[tind, m] = d['id']
+        # set unmatched detections outside of area range to ignore
+        a = np.array([d['area'] < aRng[0] or d['area'] > aRng[1] for d in dt]).reshape((1, len(dt)))
+        dtIg = np.logical_or(dtIg, np.logical_and(dtm == 0, np.repeat(a, T, 0)))
+        # store results for given image and category
+        return {
+            'image_id': imgId,
+            'category_id': catId,
+            'aRng': aRng,
+            'maxDet': maxDet,
+            'dtIds': [d['id'] for d in dt],
+            'gtIds': [g['id'] for g in gt],
+            'dtMatches': dtm,
+            'gtMatches': gtm,
+            'dtScores': [d['score'] for d in dt],
+            'gtIgnore': gtIg,
+            'dtIgnore': dtIg,
+        }
 
 
 def _evaluate_predictions_on_coco(coco_gt, coco_results, iou_type, kpt_oks_sigmas=None):
