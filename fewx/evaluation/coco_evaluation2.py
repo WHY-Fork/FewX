@@ -581,9 +581,8 @@ class WhyCocoEval(COCOeval):
 
         # get gt and dt for all category
         if p.useCats:
-            # gt = self._gts[imgId, catId]
+            gt = self._gts[imgId, catId]
             # dt = self._dts[imgId, catId]
-            gt = [_ for cId in p.catIds for _ in self._gts[imgId, cId]]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
         else:
             gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
@@ -618,9 +617,8 @@ class WhyCocoEval(COCOeval):
 
         # get gt and dt for all category
         if p.useCats:
-            # gt = self._gts[imgId, catId]
+            gt = self._gts[imgId, catId]
             # dt = self._dts[imgId, catId]
-            gt = [_ for cId in p.catIds for _ in self._gts[imgId, cId]]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
         else:
             gt = [_ for cId in p.catIds for _ in self._gts[imgId, cId]]
