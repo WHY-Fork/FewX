@@ -609,9 +609,9 @@ class WhyCocoEval(COCOeval):
         ious = maskUtils.iou(d, g, iscrowd)
 
         # change the wrong dt (iou > 0.8)
-        for g in gt:
-            for d in dt:
-                if ious[d, g] > 0.8 and d['category_id'] != catId:
+        for gind, g in enumerate(gt):
+            for dind, d in enumerate(dt):
+                if ious[dind, gind] > 0.8 and d['category_id'] != catId:
                     self._dts[imgId, d['category_id']].remove(d)
                     d['category_id'] = catId
                     self._dts[imgId, catId].append(d)
