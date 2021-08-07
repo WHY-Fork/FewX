@@ -579,10 +579,9 @@ class WhyCocoEval(COCOeval):
     def computeIoU(self, imgId, catId):
         p = self.params
 
-        # get gt and dt for all category
+        # get dt for all category
         if p.useCats:
             gt = self._gts[imgId, catId]
-            # dt = self._dts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
         else:
             gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
@@ -591,8 +590,10 @@ class WhyCocoEval(COCOeval):
             return []
         inds = np.argsort([-d['score'] for d in dt], kind='mergesort')
         dt = [dt[i] for i in inds]
-        if len(dt) > p.maxDets[-1]:
-            dt=dt[0:p.maxDets[-1]]
+
+        # REMOVE THE LENGTH CONDITION
+        # if len(dt) > p.maxDets[-1]:
+        #     dt = dt[0:p.maxDets[-1]]
 
         if p.iouType == 'segm':
             g = [g['segmentation'] for g in gt]
@@ -605,93 +606,44 @@ class WhyCocoEval(COCOeval):
 
         # compute iou between each dt and gt region
         iscrowd = [int(o['iscrowd']) for o in gt]
-        ious = maskUtils.iou(d,g,iscrowd)
-        return ious
+        ious = maskUtils.iou(d, g, iscrowd)
 
-    def evaluateImg(self, imgId, catId, aRng, maxDet):
-        """
-        perform evaluation for single category and image
-        :return: dict (single image results)
-        """
-        p = self.params
+        # change the wrong dt (iou > 0.8)
+        for g in gt:
+            for d in dt:
+                if ious[d, g] > 0.8 and d['category_id'] != catId:
+                    self._dts[imgId, d['category_id']].remove(d)
+                    d['category_id'] = catId
+                    self._dts[imgId, catId].append(d)
 
-        # get gt and dt for all category
         if p.useCats:
             gt = self._gts[imgId, catId]
-            # dt = self._dts[imgId, catId]
-            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
+            dt = self._dts[imgId, catId]
         else:
-            gt = [_ for cId in p.catIds for _ in self._gts[imgId, cId]]
-            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        if len(gt) == 0 and len(dt) == 0:
-            return None
+            gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
+            dt = [_ for cId in p.catIds for _ in self._dts[imgId,cId]]
+        if len(gt) == 0 and len(dt) ==0:
+            return []
+        inds = np.argsort([-d['score'] for d in dt], kind='mergesort')
+        dt = [dt[i] for i in inds]
 
-        # remove bad ground truth
-        for g in gt:
-            if g['ignore'] or (g['area'] < aRng[0] or g['area'] > aRng[1]):
-                g['_ignore'] = 1
-            else:
-                g['_ignore'] = 0
+        if len(dt) > p.maxDets[-1]:
+            dt = dt[0:p.maxDets[-1]]
 
-        # sort gt ignore last
-        gtind = np.argsort([g['_ignore'] for g in gt], kind='mergesort')
-        gt = [gt[i] for i in gtind]
-        # sort dt highest score first,
-        dtind = np.argsort([-d['score'] for d in dt], kind='mergesort')
-        dt = [dt[i] for i in dtind[0:maxDet]]
+        if p.iouType == 'segm':
+            g = [g['segmentation'] for g in gt]
+            d = [d['segmentation'] for d in dt]
+        elif p.iouType == 'bbox':
+            g = [g['bbox'] for g in gt]
+            d = [d['bbox'] for d in dt]
+        else:
+            raise Exception('unknown iouType for iou computation')
+
+        # compute iou between each dt and gt region
         iscrowd = [int(o['iscrowd']) for o in gt]
-        # load computed ious
-        ious = self.ious[imgId, catId][:, gtind] if len(self.ious[imgId, catId]) > 0 else self.ious[imgId, catId]
+        ious = maskUtils.iou(d, g, iscrowd)
 
-        T = len(p.iouThrs)
-        G = len(gt)
-        D = len(dt)
-        gtm = np.zeros((T, G))
-        dtm = np.zeros((T, D))
-        gtIg = np.array([g['_ignore'] for g in gt])
-        dtIg = np.zeros((T, D))
-        if not len(ious) == 0:
-            for tind, t in enumerate(p.iouThrs):
-                for dind, d in enumerate(dt):  # d index and d
-                    # information about best match so far (m=-1 -> unmatched)
-                    iou = min([t, 1 - 1e-10])
-                    m = -1
-                    for gind, g in enumerate(gt):
-                        # if this gt already matched, and not a crowd, continue
-                        if gtm[tind, gind] > 0 and not iscrowd[gind]:
-                            continue
-                        # if dt matched to reg gt, and on ignore gt, stop
-                        if m > -1 and gtIg[m] == 0 and gtIg[gind] == 1:
-                            break
-                        # continue to next gt unless better match made
-                        if ious[dind, gind] < iou:
-                            continue
-                        # if match successful and best so far, store appropriately
-                        iou = ious[dind, gind]
-                        m = gind
-                    # if match made store id of match for both dt and gt
-                    if m == -1:
-                        continue
-                    dtIg[tind, dind] = gtIg[m]
-                    dtm[tind, dind] = gt[m]['id']
-                    gtm[tind, m] = d['id']
-        # set unmatched detections outside of area range to ignore
-        a = np.array([d['area'] < aRng[0] or d['area'] > aRng[1] for d in dt]).reshape((1, len(dt)))
-        dtIg = np.logical_or(dtIg, np.logical_and(dtm == 0, np.repeat(a, T, 0)))
-        # store results for given image and category
-        return {
-            'image_id': imgId,
-            'category_id': catId,
-            'aRng': aRng,
-            'maxDet': maxDet,
-            'dtIds': [d['id'] for d in dt],
-            'gtIds': [g['id'] for g in gt],
-            'dtMatches': dtm,
-            'gtMatches': gtm,
-            'dtScores': [d['score'] for d in dt],
-            'gtIgnore': gtIg,
-            'dtIgnore': dtIg,
-        }
+        return ious
 
 
 def _evaluate_predictions_on_coco(coco_gt, coco_results, iou_type, kpt_oks_sigmas=None):
